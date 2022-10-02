@@ -54,6 +54,11 @@
 (expect "set the elemnt at index 0 of array [1.0 2.0 3.0] to 4.0 => [4.0 2.0 3.0]" [4.0 2.0 3.0] (update-array-element [1.0 2.0 3.0] 0 4.0))
 (expect "set the elemnt at index 1 of array [1.0 2.0 3.0] to 4.0 => [1.0 4.0 3.0]" [1.0 4.0 3.0] (update-array-element [1.0 2.0 3.0] 1 4.0))
 (expect "set the elemnt at index 2 of array [1.0 2.0 3.0] to 4.0 => [1.0 2.0 4.0]" [1.0 2.0 4.0] (update-array-element [1.0 2.0 3.0] 2 4.0))
+(expect "" 0 (amin-list [0.0 1.0 2.0]))
+(expect "" 1 (amin-list [1.0 0.0 2.0]))
+(expect "" 2 (amin-list [1.0 2.0 0.0]))
+(expect "" 2 (amin-list [2.0 1.0 0.0]))
+
 (enforce-current-round 1)
 (env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" CONTRACT_ACCOUNT 1.0), (VOTE "duong"1.0)]}])
 ; (read-keyset "duong-keyset")
@@ -64,6 +69,7 @@
 (commit-tx)
 (begin-tx)
 (use free.kadebi)
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" CONTRACT_ACCOUNT 1.0), (VOTE "duong"1.0)]}])
 (vote 1 "duong" 0 1.0  false)
 (expect "" [2.0 0.0] (at "voted-amount-list" (round-details 1)))
 (expect "" 1 (at "filled-number" (round-details 1)))
@@ -118,6 +124,7 @@
 (env-chain-data {"block-time": (time "2022-01-02T00:00:00Z")})
 (env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" CONTRACT_ACCOUNT 2.0), (VOTE "duong" 2.0)]}])
 (vote 2 "duong" 1 2.0 false)
+;[1 5]
 (expect "" PHASE_TWO (at "phase" (round-details 2)))
 (expect "" 6.0 (at "phase-1-voted-total" (round-details 2)))
 (expect "" false (at "is-closed" (round-details 2)))
@@ -140,10 +147,62 @@
 (vote 2 "duong" 0 1.0 true)
 (vote 2 "duong" 0 1.0 true)
 (vote 2 "duong" 0 1.0 true)
+(expect-failure "round is not closed yet!" (claim 2 "duong"))
+(expect-failure "round is not closed yet!" (claim 2 "nguyen"))
 (vote 2 "duong" 0 1.0 true)
+(expect "" 3 (get-current-round))
+
+;[11, 5]
 ; (expect "" PHASE_TWO (at "phase" (round-details 2)))
 ; (expect "" 6.0 (at "phase-1-voted-total" (round-details 2)))
 (expect "" true (at "is-closed" (round-details 2)))
+(expect "" 5.0 (get-account-win-amount 2 "duong"))
+(expect-failure "not account owner" (claim 2 "nguyen"))
+(expect "" 81.0 (at "balance" (coin.details "duong")))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-keys ["admin-key", "duong-key", "nguyen-key"])
+(env-data {"admin-keyset": ["admin-key"],
+  "duong-keyset": ["duong-key"],
+  "nguyen-keyset": ["nguyen-key"],
+  "upgrade": false
+  }
+)
+(claim 2 "duong")
+(expect "" 86.0 (at "balance" (coin.details "duong")))
 ; (expect "" 2.0 (get-total-diff 2))
-(expect "" 3 (get-current-round))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(test-capability (coin.CREDIT "nguyen"))
+(coin.credit "nguyen" (read-keyset "nguyen-keyset") 99.0)
+(expect "" 99.0 (at "balance" (coin.details "nguyen")))
+(env-sigs [{"key": "nguyen-key", "caps": [(coin.TRANSFER "nguyen" CONTRACT_ACCOUNT 10.0), (VOTE "nguyen" 10.0)]}])
+(vote 3 "nguyen" 0 10.0 true)
+(expect "" 89.0 (at "balance" (coin.details "nguyen")))
+(env-chain-data {"block-time": (time "2022-01-04T00:00:00Z")})
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" CONTRACT_ACCOUNT 20.0), (VOTE "duong" 20.0)]}])
+(vote 3 "duong" 1 5.0 true)
+(expect "" PHASE_TWO (at "phase" (round-details 3)))
+(expect "" false (at "is-closed" (round-details 3)))
+
+(vote 3 "duong" 0 15.0 true)
+(expect "" true (at "is-closed" (round-details 3)))
+(expect "" 0.0 (get-account-win-amount 3 "nguyen"))
+(expect "" 5.0 (get-account-win-amount 3 "duong"))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-keys ["admin-key", "duong-key", "nguyen-key"])
+(env-data {"admin-keyset": ["admin-key"],
+  "duong-keyset": ["duong-key"],
+  "nguyen-keyset": ["nguyen-key"],
+  "upgrade": false
+  }
+)
+(expect-failure "" (claim 3 "nguyen"))
+(expect "" 66.0 (at "balance" (coin.details "duong")))
+(claim 3 "duong")
+(expect "" 71.0 (at "balance" (coin.details "duong")))
 (commit-tx)

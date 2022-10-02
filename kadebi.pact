@@ -36,7 +36,7 @@
   )
   (defcap VOTE(account:string amount:decimal)
     @managed amount VOTE_mgr
-    (enforce-guard (at 'guard (coin.details account)))
+    (enforce-account-owner account)
     (compose-capability (ADD_VOTES))
     (compose-capability (MOVE_TO_PHASE_2))
     (compose-capability (END_ROUND))
@@ -57,6 +57,9 @@
     true
   )
 
+  (defun enforce-account-owner(account:string)
+    (enforce-guard (at 'guard (coin.details account)))
+  )
   (defun create-private-guard: guard()
     (require-capability (PRIVATE_RESERVE))
   )
@@ -87,6 +90,14 @@
     cnt: integer
     voted: bool
   )
+  (defschema user-claim
+    is-claimed: bool
+    claim-date: time
+  )
+  (defschema host-claim
+    is-claimed: bool
+    claim-date: time
+  )
   (defschema test-schema
     a: [integer]
   )
@@ -94,6 +105,8 @@
   (deftable investor-table:{investor})
   (deftable round-table:{round-schema})
   (deftable votting-position-by-account-table:{votting-position-by-account})
+  (deftable user-claim-table:{user-claim})
+  (deftable host-claim-table:{host-claim})
   (deftable test-table:{test-schema})
   (defun init()
     (coin.create-account CONTRACT_ACCOUNT (create-reserve-guard))
@@ -109,29 +122,33 @@
   (defun get-round-key (round:integer)
     (format "{}" [round])
   )
-  (defun get-round-number-key (round: integer number: integer)
+  (defun get-round-number-key (round:integer number:integer)
     (format "{}.{}" [round number])
   )
-  (defun get-round-number-account-key (round: integer account:string number: integer)
+  (defun get-round-account-key (round:integer account:string)
+    (format "{}.{}" [round account])
+  )
+  (defun get-round-account-number-key (round: integer account:string number: integer)
     (format "{}.{}.{}" [round account number])
   )
   (defun vote(round:integer account:string number:integer amount:decimal want-to-end-current-round:bool)
+    ;todo: allow only 1 vote call for each transaction 
     ;make sure round is current-round
     (enforce (> amount 0.0) "Amount must be positive!")
     (enforce-current-round round)
     (with-capability (VOTE account amount)
       (coin.transfer account CONTRACT_ACCOUNT amount)
-      (let* ((round-number-account-key (get-round-number-account-key round account number))
+      (let* ((round-account-number-key (get-round-account-number-key round account number))
             (round-key (get-round-key round))
             (round-state (read round-table round-key))
             (cur-phase (at "phase" round-state))
             (voted-amount-list (at "voted-amount-list" round-state))
             (voted-amount (at number voted-amount-list))
             )
-        (with-default-read votting-position-by-account-table round-number-account-key {"total": 0.0, "cnt": 0, "voted": false} {"total":= cur-total, "cnt":= cur-cnt, "voted":= voted}
+        (with-default-read votting-position-by-account-table round-account-number-key {"total": 0.0, "cnt": 0, "voted": false} {"total":= cur-total, "cnt":= cur-cnt, "voted":= voted}
           (if (= voted true)
-            (update votting-position-by-account-table round-number-account-key {"cnt": (+ cur-cnt 1), "total": (+ cur-total amount)})
-            (insert votting-position-by-account-table round-number-account-key {"cnt": 1, "total": amount, "voted": true})))
+            (update votting-position-by-account-table round-account-number-key {"cnt": (+ cur-cnt 1), "total": (+ cur-total amount)})
+            (insert votting-position-by-account-table round-account-number-key {"cnt": 1, "total": amount, "voted": true})))
         (add-votes round account number amount)
         (if (= true (can-move-to-phase-2 round)) (move-to-phase-2 round) true)
         (if (and (= cur-phase PHASE_TWO) (and want-to-end-current-round (can-end-current-round round account amount))) (end-current-round round) true)
@@ -203,12 +220,33 @@
       (update state-table STATE_KEY {"current-round": new-round})
     )
   )
-  (defun claim(account:string round:integer)
-    ; make sure that each acount can clain at most 1 time
-    (get-account-win-amount account round)
+  (defun enforce-round-closed(round:integer)
+    (with-read round-table (get-round-key round) {"is-closed":= is-closed} (enforce (= true is-closed) "round is not closed yet!"))
   )
-  (defun get-account-win-amount(account:string round:integer)
-    true
+  (defun claim(round:integer account:string)
+    ; make sure that each acount can claim at most 1 time
+    ; make sure that round is already closed
+    (enforce-account-owner account)
+    (enforce-round-closed round)
+    (with-default-read user-claim-table (get-round-account-key round account) {"is-claimed":false} {"is-claimed":= is-claimed}
+      (enforce (= is-claimed false) "already claimed!")
+      (let ((win-amount (get-account-win-amount round account)))
+        (enforce (> win-amount 0.0) "win amount = 0.0")
+        (install-capability (coin.TRANSFER CONTRACT_ACCOUNT account win-amount))
+        (with-capability (PRIVATE_RESERVE)
+          (coin.transfer CONTRACT_ACCOUNT account win-amount)
+          (insert user-claim-table (get-round-account-key round account) {"is-claimed":true, "claim-date": (get-current-time)})
+        )
+      )
+    )
+  )
+
+  (defun get-account-win-amount(round:integer account:string )
+    (with-read round-table (get-round-key round) {"voted-amount-list":= voted-amount-list}
+      (let ((winning-number (amin-list voted-amount-list)))
+        (with-default-read votting-position-by-account-table (get-round-account-number-key round account winning-number) {"total": 0.0} {"total":= total} total)
+      )
+    )
   )
   (defun house-withdraw(round:integer)
     true
@@ -287,6 +325,14 @@
     (enforce (> (length a) 0) "Empty list")
     (let ((first-item (at 0 a))) (fold (min) first-item a))
   )
+  (defun amin-list:integer(a:[decimal])
+    (let* (
+        (_a (zip (lambda(x y) {"value": x, "idx": y}) a (enumerate 0 (length a) 1)))
+        (cmp (lambda(best cur) (if (< (at "value" cur) (at best a)) (at "idx" cur) best)))
+      )
+      (fold cmp 0 _a)
+    )
+  )
   (defun test()
     (let ((a (enumerate 0 1000 1))) (insert test-table "test" {"a": a}))
   )
@@ -333,6 +379,8 @@
     (create-table investor-table)
     (create-table votting-position-by-account-table)
     (create-table test-table)
+    (create-table user-claim-table)
+    (create-table host-claim-table)
     (init)
   ]
 )
