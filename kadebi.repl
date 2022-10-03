@@ -1,10 +1,12 @@
 
 (begin-tx)
 (define-namespace 'free (sig-keyset) (sig-keyset))
-(env-keys ["admin-key", "duong-key", "nguyen-key"])
+(env-keys ["admin-key", "duong-key", "nguyen-key", "host-key"])
 (env-data {"admin-keyset": ["admin-key"],
   "duong-keyset": ["duong-key"],
   "nguyen-keyset": ["nguyen-key"],
+  "host-keyset": ["host-key"],
+  "host-account": "host",
   "upgrade": false
   }
 )
@@ -14,16 +16,10 @@
 (commit-tx)
 
 (begin-tx)
-(env-keys ["admin-key", "duong-key", "nguyen-key"])
-(env-data {"admin-keyset": ["admin-key"],
-  "duong-keyset": ["duong-key"],
-  "nguyen-keyset": ["nguyen-key"],
-  "upgrade": false
-  }
-)
-(use coin)
-(create-account "duong" (read-keyset "duong-keyset"))
 
+(use coin)
+(create-account "host" (read-keyset "host-keyset"))
+(create-account "duong" (read-keyset "duong-keyset"))
 (create-account "nguyen" (read-keyset "nguyen-keyset"))
 
 (create-account "k:0000000000000000000000000000000000000000000000000000000000000000" (read-keyset "admin-keyset"))
@@ -159,9 +155,12 @@
 (expect "" 5.0 (get-account-win-amount 2 "duong"))
 (expect-failure "not account owner" (claim 2 "nguyen"))
 (expect "" 81.0 (at "balance" (coin.details "duong")))
+(expect "" [0.0 5.1] (at "voted-amount-list" (round-details 3))) ;/0.85 * 6
 (commit-tx)
 (begin-tx)
 (use free.kadebi)
+
+;[0.0 5.1]
 (env-keys ["admin-key", "duong-key", "nguyen-key"])
 (env-data {"admin-keyset": ["admin-key"],
   "duong-keyset": ["duong-key"],
@@ -188,21 +187,36 @@
 (expect "" false (at "is-closed" (round-details 3)))
 
 (vote 3 "duong" 0 15.0 true)
+;[25.0 10.1]
 (expect "" true (at "is-closed" (round-details 3)))
 (expect "" 0.0 (get-account-win-amount 3 "nguyen"))
 (expect "" 5.0 (get-account-win-amount 3 "duong"))
 (commit-tx)
 (begin-tx)
 (use free.kadebi)
-(env-keys ["admin-key", "duong-key", "nguyen-key"])
-(env-data {"admin-keyset": ["admin-key"],
-  "duong-keyset": ["duong-key"],
-  "nguyen-keyset": ["nguyen-key"],
-  "upgrade": false
-  }
-)
+(env-keys ["duong-key", "nguyen-key", "host-key", "admin-key"])
 (expect-failure "" (claim 3 "nguyen"))
 (expect "" 66.0 (at "balance" (coin.details "duong")))
 (claim 3 "duong")
 (expect "" 71.0 (at "balance" (coin.details "duong")))
+(expect "" 0.0 (at "balance" (coin.details "host")))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-keys ["host-key"])
+(host-claim 3)
+(expect "" 1.49 (at "balance" (coin.details "host")))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-keys ["host-key"])
+(host-claim 2)
+(expect "" (+ 1.49 0.6) (at "balance" (coin.details "host")))
+(expect-failure "already claimed" (host-claim 2))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-keys ["host-key"])
+(expect-failure "round is not created" (host-claim 5))
+(expect-failure "round is not closed" (host-claim 0))
 (commit-tx)

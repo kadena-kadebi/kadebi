@@ -4,10 +4,11 @@
   (defconst CONTRACT_ACCOUNT (hash "kadebi-coin-account"))
   (defconst ROUND_DURATION (* 5.0 60))
   (defconst BURN_RATE 0.05)
-  (defconst HOUSE_ERN_RATE 0.1)
-  (defconst RETURN_RATE (- 1 (+ BURN_RATE HOUSE_ERN_RATE)))
+  (defconst HOUSE_EARN_RATE 0.1)
+  (defconst RETURN_RATE (- 1 (+ BURN_RATE HOUSE_EARN_RATE)))
   (defconst BURN_ACCOUNT "k:0000000000000000000000000000000000000000000000000000000000000000")
   (defconst STATE_KEY "state")
+  (defconst HOST_ACCOUNT_KEY "host")
   (defconst PHASE_ONE:string "phase1")
   (defconst PHASE_TWO:string "phase2")
   (defconst MULTIPLYER:integer 6364136223846793005)
@@ -70,10 +71,8 @@
   (defschema state
     current-round:integer
   )
-  (defschema investor
-    name: string
-    share: decimal
-    accout: string
+  (defschema host-account
+    account: string
   )
   (defschema round-schema
     open-time: time
@@ -90,11 +89,11 @@
     cnt: integer
     voted: bool
   )
-  (defschema user-claim
+  (defschema user-claim-schema
     is-claimed: bool
     claim-date: time
   )
-  (defschema host-claim
+  (defschema host-claim-schema
     is-claimed: bool
     claim-date: time
   )
@@ -102,15 +101,16 @@
     a: [integer]
   )
   (deftable state-table:{state})
-  (deftable investor-table:{investor})
+  (deftable host-account-table:{host-account})
   (deftable round-table:{round-schema})
   (deftable votting-position-by-account-table:{votting-position-by-account})
-  (deftable user-claim-table:{user-claim})
-  (deftable host-claim-table:{host-claim})
+  (deftable user-claim-table:{user-claim-schema})
+  (deftable host-claim-table:{host-claim-schema})
   (deftable test-table:{test-schema})
   (defun init()
     (coin.create-account CONTRACT_ACCOUNT (create-reserve-guard))
     (insert state-table STATE_KEY {"current-round": -1})
+    (insert host-account-table HOST_ACCOUNT_KEY {"account": (read-string "host-account")})
     (with-capability (CREATE_ROUND) (create-new-round 0))
   )
 
@@ -132,7 +132,7 @@
     (format "{}.{}.{}" [round account number])
   )
   (defun vote(round:integer account:string number:integer amount:decimal want-to-end-current-round:bool)
-    ;todo: allow only 1 vote call for each transaction 
+    ;todo: allow only 1 vote call for each transaction
     ;make sure round is current-round
     (enforce (> amount 0.0) "Amount must be positive!")
     (enforce-current-round round)
@@ -230,17 +230,16 @@
     (enforce-round-closed round)
     (with-default-read user-claim-table (get-round-account-key round account) {"is-claimed":false} {"is-claimed":= is-claimed}
       (enforce (= is-claimed false) "already claimed!")
-      (let ((win-amount (get-account-win-amount round account)))
-        (enforce (> win-amount 0.0) "win amount = 0.0")
-        (install-capability (coin.TRANSFER CONTRACT_ACCOUNT account win-amount))
-        (with-capability (PRIVATE_RESERVE)
-          (coin.transfer CONTRACT_ACCOUNT account win-amount)
-          (insert user-claim-table (get-round-account-key round account) {"is-claimed":true, "claim-date": (get-current-time)})
-        )
+    )
+    (let ((win-amount (get-account-win-amount round account)))
+      (enforce (> win-amount 0.0) "win amount = 0.0")
+      (install-capability (coin.TRANSFER CONTRACT_ACCOUNT account win-amount))
+      (with-capability (PRIVATE_RESERVE)
+        (coin.transfer CONTRACT_ACCOUNT account win-amount)
+        (insert user-claim-table (get-round-account-key round account) {"is-claimed":true, "claim-date": (get-current-time)})
       )
     )
   )
-
   (defun get-account-win-amount(round:integer account:string )
     (with-read round-table (get-round-key round) {"voted-amount-list":= voted-amount-list}
       (let ((winning-number (amin-list voted-amount-list)))
@@ -248,8 +247,21 @@
       )
     )
   )
-  (defun house-withdraw(round:integer)
-    true
+  (defun host-claim(round:integer)
+    (with-default-read host-claim-table (get-round-key round) {"is-claimed":false} {"is-claimed":= is-claimed}
+      (enforce (= is-claimed false) "already claimed!")
+    )
+    (with-read host-account-table HOST_ACCOUNT_KEY {"account":=account}
+      (enforce-account-owner account)
+      (enforce-round-closed round)
+      (let ((amount (get-host-earn-amount round)))
+        (install-capability (coin.TRANSFER CONTRACT_ACCOUNT account amount))
+        (with-capability (PRIVATE_RESERVE)
+          (coin.transfer CONTRACT_ACCOUNT account amount)
+          (insert host-claim-table (get-round-key round) {"is-claimed": true, "claim-date": (get-current-time)})
+        )
+      )
+    )
   )
   (defun add-votes(round:integer account:string number:integer amount:decimal)
     (require-capability (ADD_VOTES))
@@ -299,8 +311,8 @@
   (defun get-burn-amount (round:integer)
     (let* ((total-diff (get-total-diff round))) (* total-diff BURN_RATE))
   )
-  (defun get-house-ern-amount (round:integer)
-    (let* ((total-diff (get-total-diff round))) (* total-diff HOUSE_ERN_RATE))
+  (defun get-host-earn-amount (round:integer)
+    (let* ((total-diff (get-total-diff round))) (* total-diff HOUSE_EARN_RATE))
   )
   (defun get-total-diff(round:integer)
     (let* (
@@ -376,7 +388,7 @@
   [
     (create-table state-table)
     (create-table round-table)
-    (create-table investor-table)
+    (create-table host-account-table)
     (create-table votting-position-by-account-table)
     (create-table test-table)
     (create-table user-claim-table)
