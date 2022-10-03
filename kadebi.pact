@@ -35,8 +35,8 @@
   (defcap CREATE_ROUND()
     true
   )
-  (defcap VOTE(account:string amount:decimal)
-    @managed amount VOTE_mgr
+  (defcap VOTE(account:string)
+    @managed
     (enforce-account-owner account)
     (compose-capability (ADD_VOTES))
     (compose-capability (MOVE_TO_PHASE_2))
@@ -45,12 +45,12 @@
     (compose-capability (BURN))
     true
   )
-  (defun VOTE_mgr(managed:decimal requested:decimal)
-    (let ((newbal (- managed requested)))
-    (enforce (>= newbal 0.0)
-      (format "TRANSFER exceeded for balance {}" [managed]))
-    newbal)
-  )
+  ; (defun VOTE_mgr(managed:decimal requested:decimal)
+  ;   (let ((newbal (- managed requested)))
+  ;   (enforce (>= newbal 0.0)
+  ;     (format "TRANSFER exceeded for balance {}" [managed]))
+  ;   newbal)
+  ; )
   (defcap ADD_VOTES()
     true
   )
@@ -136,7 +136,7 @@
     ;make sure round is current-round
     (enforce (> amount 0.0) "Amount must be positive!")
     (enforce-current-round round)
-    (with-capability (VOTE account amount)
+    (with-capability (VOTE account)
       (coin.transfer account CONTRACT_ACCOUNT amount)
       (let* ((round-account-number-key (get-round-account-number-key round account number))
             (round-key (get-round-key round))
