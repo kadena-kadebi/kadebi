@@ -5,7 +5,7 @@
   (defconst ROUND_DURATION (* 5.0 60))
   (defconst BURN_RATE 0.05)
   (defconst HOUSE_EARN_RATE 0.1)
-  (defconst RETURN_RATE (- 1 (+ BURN_RATE HOUSE_EARN_RATE)))
+  (defconst X_EARN_RATE (- 1 (+ BURN_RATE HOUSE_EARN_RATE)))
   (defconst BURN_ACCOUNT "k:0000000000000000000000000000000000000000000000000000000000000000")
   (defconst STATE_KEY "state")
   (defconst HOST_ACCOUNT_KEY "host")
@@ -24,12 +24,15 @@
   (defcap END_ROUND()
     ;capability for ending current round
     (compose-capability (CREATE_ROUND))
+    (compose-capability (X_VOTE))
+    (compose-capability (BURN))
     true
   )
   (defcap BURN()
     true
   )
-  (defcap RETURN()
+  (defcap X_VOTE()
+    ; (compose-capability)
     true
   )
   (defcap CREATE_ROUND()
@@ -41,8 +44,6 @@
     (compose-capability (ADD_VOTES))
     (compose-capability (MOVE_TO_PHASE_2))
     (compose-capability (END_ROUND))
-    (compose-capability (RETURN))
-    (compose-capability (BURN))
     true
   )
   ; (defun VOTE_mgr(managed:decimal requested:decimal)
@@ -145,10 +146,6 @@
             (voted-amount-list (at "voted-amount-list" round-state))
             (voted-amount (at number voted-amount-list))
             )
-        (with-default-read votting-position-by-account-table round-account-number-key {"total": 0.0, "cnt": 0, "voted": false} {"total":= cur-total, "cnt":= cur-cnt, "voted":= voted}
-          (if (= voted true)
-            (update votting-position-by-account-table round-account-number-key {"cnt": (+ cur-cnt 1), "total": (+ cur-total amount)})
-            (insert votting-position-by-account-table round-account-number-key {"cnt": 1, "total": amount, "voted": true})))
         (add-votes round account number amount)
         (if (= true (can-move-to-phase-2 round)) (move-to-phase-2 round) true)
         (if (and (= cur-phase PHASE_TWO) (and want-to-end-current-round (can-end-current-round round account amount))) (end-current-round round) true)
@@ -193,7 +190,7 @@
     (burn round)
     (update round-table (get-round-key round) {"close-time": (get-current-time), "is-closed": true})
     (create-new-round (+ round 1))
-    (return-remain-fund round (+ round 1))
+    (x-vote round (+ round 1))
   )
   (defun get-current-time:time()
     (at "block-time" (chain-data))
@@ -265,6 +262,12 @@
   )
   (defun add-votes(round:integer account:string number:integer amount:decimal)
     (require-capability (ADD_VOTES))
+    (let ((round-account-number-key (get-round-account-number-key round account number)))
+      (with-default-read votting-position-by-account-table round-account-number-key {"total": 0.0, "cnt": 0, "voted": false} {"total":= cur-total, "cnt":= cur-cnt, "voted":= voted}
+        (if (= voted true)
+          (update votting-position-by-account-table round-account-number-key {"cnt": (+ cur-cnt 1), "total": (+ cur-total amount)})
+          (insert votting-position-by-account-table round-account-number-key {"cnt": 1, "total": amount, "voted": true})))
+    )
     (with-read round-table (get-round-key round) {"filled-number":= filled-number, "voted-amount-list":= voted-amount-list, "hash":= cur-hash}
       (let*
         (
@@ -282,14 +285,15 @@
       )
     )
   )
-  (defun return-remain-fund(current-round:integer new-round:integer)
-    (require-capability (RETURN))
+  (defun x-vote(current-round:integer new-round:integer)
+    (require-capability (X_VOTE))
     (let
       (
-        (return-amount (get-return-amount current-round))
+        (x-winning-amount (get-x-winning-amount current-round))
+        (x-award (get-x-award current-round))
         (number (mod new-round 2))
       )
-      (add-votes new-round CONTRACT_ACCOUNT number return-amount)
+      (add-votes new-round CONTRACT_ACCOUNT number (+ (* x-winning-amount 2) x-award))
     )
   )
   (defun burn(round: integer)
@@ -305,8 +309,11 @@
       )
     )
   )
-  (defun get-return-amount (round:integer)
-    (let ((total-diff (get-total-diff round))) (* total-diff RETURN_RATE))
+  (defun get-x-award (round:integer)
+    (let ((total-diff (get-total-diff round))) (* total-diff X_EARN_RATE))
+  )
+  (defun get-x-winning-amount(round:integer)
+    (get-account-win-amount round CONTRACT_ACCOUNT)
   )
   (defun get-burn-amount (round:integer)
     (let* ((total-diff (get-total-diff round))) (* total-diff BURN_RATE))

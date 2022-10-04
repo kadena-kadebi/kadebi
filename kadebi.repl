@@ -23,7 +23,6 @@
 (create-account "nguyen" (read-keyset "nguyen-keyset"))
 
 (create-account "k:0000000000000000000000000000000000000000000000000000000000000000" (read-keyset "admin-keyset"))
-(create-account "nguyenÀ" (read-keyset "nguyen-keyset"))
 (expect "duong balance" 0.0 (at 'balance (details "duong")))
 (expect "nguyen balance" 0.0 (at 'balance (details "nguyen")))
 (test-capability (CREDIT "duong"))
@@ -209,10 +208,27 @@
 (host-claim 2)
 (expect "" (+ 1.49 0.6) (at "balance" (coin.details "host")))
 (expect-failure "already claimed" (host-claim 2))
+(expect "" [22.865 0.0] (at "voted-amount-list" (round-details 4))) ;0.85 * 14.9 + 5.1 * 2
 (commit-tx)
 (begin-tx)
 (use free.kadebi)
 (env-keys ["host-key"])
 (expect-failure "round is not created" (host-claim 5))
 (expect-failure "round is not closed" (host-claim 0))
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-chain-data {"block-time": (time "2022-01-05T00:00:00Z")})
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" CONTRACT_ACCOUNT 10.0), (VOTE "duong")]}])
+(vote 4 "duong" 1 10.0 true)
+;[22.865 10.0]
+(commit-tx)
+(begin-tx)
+(use free.kadebi)
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" CONTRACT_ACCOUNT 32.865), (VOTE "duong")]}])
+(vote 4 "duong" 0 32.865 true) ;;end-round
+;[55.730 10.0]
+(expect "" 5 (get-current-round))
+(expect "" 45.730 (get-total-diff 4))
+(expect "" [0.0 38.8705] (at "voted-amount-list" (round-details 5))) ;X lost -> 0.85 * 45.730
 (commit-tx)
