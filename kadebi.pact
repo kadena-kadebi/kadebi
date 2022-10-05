@@ -71,6 +71,7 @@
 
   (defschema state
     current-round:integer
+    locked:bool
   )
   (defschema host-account
     account: string
@@ -110,11 +111,19 @@
   (deftable test-table:{test-schema})
   (defun init()
     (coin.create-account CONTRACT_ACCOUNT (create-reserve-guard))
-    (insert state-table STATE_KEY {"current-round": -1})
+    (insert state-table STATE_KEY {"current-round": -1, "locked": true})
     (insert host-account-table HOST_ACCOUNT_KEY {"account": (read-string "host-account")})
     (with-capability (CREATE_ROUND) (create-new-round 0))
   )
 
+  (defun lock()
+    (enforce-keyset "free.admin-keyset")
+    (update state-table STATE_KEY {"locked": true})
+  )
+  (defun unlock()
+    (enforce-keyset "free.admin-keyset")
+    (update state-table STATE_KEY {"locked": false})
+  )
   (defun enforce-current-round(round:integer)
     (let ((current-round (get-current-round)))
       (enforce (= round current-round) (format "{} is not current round!" [round]))
@@ -137,6 +146,9 @@
     ;make sure round is current-round
     (enforce (> amount 0.0) "Amount must be positive!")
     (enforce-current-round round)
+    (with-read state-table STATE_KEY {"locked":= locked}
+      (enforce (not locked) "contract is being locked!")
+    )
     (with-capability (VOTE account)
       (coin.transfer account CONTRACT_ACCOUNT amount)
       (let* ((round-account-number-key (get-round-account-number-key round account number))
