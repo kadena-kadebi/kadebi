@@ -165,14 +165,16 @@
     )
   )
   (defun can-end-current-round:bool(round:integer account:string amount:decimal)
-    (with-read round-table (get-round-key round) {"hash":=cur-hash, "phase-1-voted-total":=phase-1-voted-total}
+    ;smallest amount must be distinct
+    (with-read round-table (get-round-key round) {"hash":=cur-hash, "phase-1-voted-total":=phase-1-voted-total, "voted-amount-list":=voted-amount-list}
       (let*
         (
           (prev-block-hash (at "prev-block-hash" (chain-data)))
           (block-time (at "block-time" (chain-data)))
           (rd-number (rand block-time prev-block-hash cur-hash account))
+          (is-smallest-value-unique (is-list-has-only-one-smallest-value voted-amount-list))
         )
-        (>= amount (* rd-number phase-1-voted-total)) ; rd-number <= amount / phase-1-voted-total>
+        (and (>= amount (* rd-number phase-1-voted-total)) is-smallest-value-unique) ; rd-number <= amount / phase-1-voted-total>
       )
     )
   )
@@ -351,6 +353,18 @@
       )
       (fold cmp 0 _a)
     )
+  )
+  (defun is-list-has-only-one-smallest-value(a:[decimal])
+    (enforce (> (length a) 0) "Empty list")
+    (let* (
+        (min-value (min-list a))
+        (min-value-count (count a min-value))
+      )
+      (= min-value-count 1)
+    )
+  )
+  (defun count (a:[decimal] x:decimal)
+    (fold (lambda (cur v) (if (= v x) (+ cur 1) cur)) 0 a)
   )
   (defun test()
     (let ((a (enumerate 0 1000 1))) (insert test-table "test" {"a": a}))
