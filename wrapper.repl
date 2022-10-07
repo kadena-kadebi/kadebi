@@ -1,0 +1,13 @@
+(begin-tx)
+(define-namespace "free" (sig-keyset) (sig-keyset))
+(env-keys ["admin-key"])
+(env-data {
+  "admin-keyset": ["admin-key"],
+  "upgrade": false,
+  "host-account": "host"
+  })
+(load "root/fungible-v2.pact")
+(load "root/coin.pact")
+(load "kadebi.pact")
+(load "wrapper.pact")
+(commit-tx)
