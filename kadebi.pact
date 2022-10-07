@@ -2,7 +2,6 @@
 (define-keyset "free.admin-keyset" (read-keyset "admin-keyset"))
 (module kadebi GOVERNANCE
   (defconst CONTRACT_ACCOUNT (hash "kadebi-coin-account"))
-  (defconst ROUND_DURATION (* 5.0 60))
   (defconst BURN_RATE 0.05)
   (defconst HOUSE_EARN_RATE 0.1)
   (defconst X_EARN_RATE (- 1 (+ BURN_RATE HOUSE_EARN_RATE)))
@@ -71,7 +70,7 @@
   )
   (defschema mode
     name:string
-    phase-1-duration:integer ;seconds
+    phase-1-duration:decimal ;seconds
     no-options:integer; number of options
   )
   (defschema state
@@ -117,12 +116,12 @@
   (deftable test-table:{test-schema})
   (defun init()
     (coin.create-account CONTRACT_ACCOUNT (create-reserve-guard))
-    (create-new-mode BINARY_MODE (* 10 60) 2)
+    (create-new-mode BINARY_MODE (* 10.0 60) 2)
     (insert host-account-table HOST_ACCOUNT_KEY {"account": (read-string "host-account")})
     (with-capability (CREATE_ROUND) (create-new-round BINARY_MODE 0))
   )
 
-  (defun create-new-mode (name:string duration:integer no-options:integer)
+  (defun create-new-mode (name:string duration:decimal no-options:integer)
     (enforce-keyset "free.admin-keyset")
     (insert mode-table (get-mode-key name) {"name": name, "phase-1-duration": duration, "no-options": no-options})
     (insert state-table (get-mode-key name) {"current-round": -1, "locked": true})
@@ -187,8 +186,10 @@
     )
   )
   (defun can-move-to-phase-2:bool(mode:string round:integer)
-    (with-read round-table (get-mode-round-key mode round) {"open-time":= open-time, "phase":= cur-phase}
-      (and (> (diff-time (get-current-time) open-time) ROUND_DURATION) (= cur-phase PHASE_ONE))
+    (with-read mode-table mode {"phase-1-duration":= phase-1-duration}
+      (with-read round-table (get-mode-round-key mode round) {"open-time":= open-time, "phase":= cur-phase}
+        (and (> (diff-time (get-current-time) open-time) phase-1-duration) (= cur-phase PHASE_ONE))
+      )
     )
   )
   (defun can-end-current-round:bool(mode:string round:integer account:string amount:decimal)

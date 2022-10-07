@@ -21,7 +21,6 @@
 (create-account "host" (read-keyset "host-keyset"))
 (create-account "duong" (read-keyset "duong-keyset"))
 (create-account "nguyen" (read-keyset "nguyen-keyset"))
-
 (create-account "k:0000000000000000000000000000000000000000000000000000000000000000" (read-keyset "admin-keyset"))
 (expect "duong balance" 0.0 (at 'balance (details "duong")))
 (expect "nguyen balance" 0.0 (at 'balance (details "nguyen")))
