@@ -10,4 +10,43 @@
 (load "root/coin.pact")
 (load "kadebi.pact")
 (load "wrapper.pact")
+(free.kadebi.unlock free.kadebi.BINARY_MODE)
+(commit-tx)
+
+(begin-tx)
+(env-keys ["duong-key", "nguyen-key", "host-key"])
+(env-data {
+  "duong-keyset": ["duong-key"],
+  "nguyen-keyset": ["nguyen-key"],
+  "host-keyset": ["host-key"]
+})
+(coin.create-account "duong" (read-keyset "duong-keyset"))
+(coin.create-account "nguyen" (read-keyset "duong-keyset"))
+(coin.create-account "host" (read-keyset "host-keyset"))
+(test-capability (coin.CREDIT "duong"))
+(coin.credit "duong" (read-keyset "duong-keyset") 100.0)
+(commit-tx)
+(begin-tx)
+(use free.kadebi-wrapper)
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" free.kadebi.CONTRACT_ACCOUNT 1.0), (free.kadebi.VOTE "duong")]}])
+(vote free.kadebi.BINARY_MODE 0 "duong" 0 1.0 true)
+(commit-tx)
+(begin-tx) ;test create-ticket
+(use free.kadebi-wrapper)
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" TICKET_PROVIDER_ACCOUNT 1.0)]}])
+(create-tickets "duong" "duong" 0.5 2)
+(expect "" 1 (get-nxt-ticket-id))
+(commit-tx)
+(begin-tx) ;test create-ticket
+(use free.kadebi-wrapper)
+(env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" TICKET_PROVIDER_ACCOUNT 2.0)]}])
+(create-tickets "duong" "duong" 1.0 2)
+(expect "" 2 (get-nxt-ticket-id))
+(commit-tx)
+(begin-tx)
+(use free.kadebi-wrapper)
+(env-keys ["admin-key"])
+(expect "" ["0" "1"] (fold-db ticket-table (lambda (k obj) true) (lambda (k obj) k)))
+(expect "" [{"account": "duong", "quantity": 2, "used-quantity": 0, "value": 0.5} {"account": "duong", "quantity": 2, "used-quantity": 0, "value": 1.0}]
+  (fold-db ticket-table (lambda (k obj) true) (lambda (k obj) obj)))
 (commit-tx)
