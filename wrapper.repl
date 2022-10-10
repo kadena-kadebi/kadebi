@@ -29,7 +29,7 @@
 (begin-tx)
 (use free.kadebi-wrapper)
 (env-sigs [{"key": "duong-key", "caps": [(coin.TRANSFER "duong" free.kadebi.CONTRACT_ACCOUNT 1.0), (free.kadebi.VOTE "duong")]}])
-(vote free.kadebi.BINARY_MODE 0 "duong" 0 1.0 true)
+(vote free.kadebi.BINARY_MODE "duong" 0 "duong" 0 1.0 true)
 (commit-tx)
 (begin-tx) ;test create-ticket
 (use free.kadebi-wrapper)

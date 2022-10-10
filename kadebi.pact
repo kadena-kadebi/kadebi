@@ -38,9 +38,8 @@
   (defcap CREATE_ROUND()
     true
   )
-  (defcap VOTE(account:string)
+  (defcap VOTE()
     @managed
-    (enforce-account-owner account)
     (compose-capability (ADD_VOTES))
     (compose-capability (MOVE_TO_PHASE_2))
     (compose-capability (END_ROUND))
@@ -157,7 +156,7 @@
   (defun get-mode-round-account-number-key (mode:string round: integer account:string number: integer)
     (format "{}.{}.{}.{}" [mode round account number])
   )
-  (defun vote(mode:string round:integer account:string number:integer amount:decimal want-to-end-current-round:bool)
+  (defun vote(payer:string mode:string round:integer account:string number:integer amount:decimal want-to-end-current-round:bool)
     ;todo: allow only 1 vote call for each transaction
     ;make sure round is current-round
     ;make sure mode is valid
@@ -166,8 +165,8 @@
     (with-read state-table mode {"locked":= locked}
       (enforce (not locked) "contract is being locked!")
     )
-    (with-capability (VOTE account)
-      (coin.transfer account CONTRACT_ACCOUNT amount)
+    (with-capability (VOTE)
+      (coin.transfer payer CONTRACT_ACCOUNT amount)
       (let* ((round-account-number-key (get-mode-round-account-number-key mode round account number))
             (round-key (get-mode-round-key mode round))
             (round-state (read round-table round-key))
@@ -358,6 +357,14 @@
         (win-total (min-list voted-amount-list))
       )
       (- voted-total (* win-total 2))
+    )
+  )
+  (defun get-account-voted-amount (mode:string round:integer account:string number:integer)
+    (with-default-read votting-position-by-account-table (get-mode-round-account-number-key mode round account number) {"total":0.0} {"total":=total} total)
+  )
+  (defun get-account-voted-amount-list(mode:string round:integer account:string)
+    (with-read mode-table mode {"no-options":= no-options}
+      (map (lambda(x) (get-account-voted-amount mode round account x)) (enumerate 0 (- no-options 1) 1))
     )
   )
   (defun round-details(mode:string round:integer)
