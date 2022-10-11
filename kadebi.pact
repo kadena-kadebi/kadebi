@@ -126,7 +126,7 @@
     (insert state-table (get-mode-key name) {"current-round": -1, "locked": true})
   )
   (defun get-all-modes()
-    (fold-db mode-table (lambda(k obj) true) (lambda (x) x))
+    (fold-db mode-table (lambda(k obj) true) (lambda (k obj) {"mode": k, "phase-1-duration": (at "phase-1-duration" obj), "no-options": (at "no-options" obj)}))
   )
   (defun lock(mode:string)
     (enforce-keyset "free.admin-keyset")
